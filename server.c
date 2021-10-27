@@ -10,17 +10,82 @@
 #define PORT 50000
 void* process(void* arg){
     int c_sockfd = *((int *)arg);
-    printf("c_sockft=%d\n",c_sockfd);
+    char filename[100]={0};
     char c;
+    //查找第一个空格
     while(1){
-        if(read(c_sockfd,&c,1) == 0 ){
+        if(read(c_sockfd,&c,1) == 0){
             break;
         }
-        printf("%c",c);
+        if(c == ' '){
+            break;
+        }
     }
-    printf("client over!\n");
-}
+    //存文件名
+    int i=0;
+    while(1){
+        if(read(c_sockfd,&c,1) ==0 ){
+            break;
+        }
+        if(c == ' '){
+            break;
+        }
+        filename[i++] = c;
+    }
+    printf("filename = %s\n",filename);
+    //取后缀名
+    char suffix[5]={0};
+    i = strlen(filename)-1;
+    while (1) {
+        if(filename[i]=='.'){
+            break;
+        }
+        i--;
+    }
+    i++;
+    int j=0;
+    while(1){
+        c = filename[i];
+        if(c == 0) break;
 
+        i++;suffix[j++]=c;
+    }
+    //得到完整路径
+    char path[100] ={0};
+    sprintf(path,"/home/ren/Documents/Cfile%s",filename);
+    printf("path=%s\n",path);
+    //查找文件是否存在
+    int fd = open(path,O_RDONLY);
+    printf("fd=%d",fd);
+    if(fd == -1){//文件不存在，返回404
+        write(c_sockfd,"HTTP/1.1 404 Not Found\n\n",24);
+        write(c_sockfd,"<h1>Resource Not Found!</h1>",28);
+        shutdown(c_sockfd,SHUT_RDWR);//关闭与客户端的链接
+        //close(c_sockfd);   shutdown完成四次挥手，数据可以保证发送到浏览器，close会中断数据发送
+        pthread_exit(NULL);
+    }
+    //发送响应头
+    write(c_sockfd,"HTTP/1.1 200 OK\n\n",15);
+    //告诉浏览器返回的文件是什么类型
+    if(strcmp(suffix,"html") == 0 || strcmp(suffix,"txt") == 0){
+        write(c_sockfd ,"Content-Type: text/html; charset=UTF-8\n\n",40);
+    }else if(strcmp(suffix,"jpg")==0 || strcmp(suffix,"jpeg")==0|| strcmp(suffix,"png")==0|| strcmp(suffix,"gif")==0){
+        write(c_sockfd, "Content-Type: image/jpeg\n\n",26);
+    }
+    //发送响应体
+    char buffer[1024];
+    while(1){
+        memset(buffer,0,sizeof(buffer));
+        int len = read(fd,buffer,1024);
+        write(c_sockfd,buffer,len);
+        if(len < 1024){
+            break;
+        }
+    }
+    close(fd);
+    shutdown(c_sockfd,SHUT_RDWR);
+    pthread_exit(NULL);
+}
 int main(void){
     struct sockaddr_in s_addr,c_addr;
     int addrlen = sizeof(struct sockaddr_in);
@@ -60,7 +125,7 @@ int main(void){
             perror("accept error!");
             exit(1);
         }
-        printf("received client : ip=%s,port=%s\n",inet_ntoa(c_addr.sin_addr),ntohs(c_addr.sin_port));
+        printf("received client : ip=%s,port=%d\n",inet_ntoa(c_addr.sin_addr),ntohs(c_addr.sin_port));
         //处理请求
         if(pthread_create(&ptid,NULL,process,&c_sockfd)== -1){
             perror("thread_create error!");
